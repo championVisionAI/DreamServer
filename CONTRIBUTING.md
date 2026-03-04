@@ -1,6 +1,6 @@
-# Contributing to Lighthouse AI
+# Contributing to Dream Server
 
-First off, thanks for wanting to contribute! Lighthouse AI is an open source project and we welcome help from everyone -- whether you're fixing a typo, adding a cookbook recipe, or tackling a full feature.
+First off, thanks for wanting to contribute! Dream Server is an open source project and we welcome help from everyone -- whether you're fixing a typo, adding a cookbook recipe, or tackling a full feature.
 
 ## Quick Start
 
@@ -43,11 +43,11 @@ Nothing exotic:
 
 ## Where to Ask Questions
 
-Not sure about something? Open a thread in [GitHub Discussions](https://github.com/Light-Heart-Labs/Lighthouse-AI/discussions). We're happy to help you figure out the best approach before you write any code.
+Not sure about something? Open a thread in [GitHub Discussions](https://github.com/Light-Heart-Labs/DreamServer/discussions). We're happy to help you figure out the best approach before you write any code.
 
 ## License
 
-By contributing to Lighthouse AI, you agree that your contributions will be licensed under the [Apache License 2.0](LICENSE), the same license that covers this project.
+By contributing to Dream Server, you agree that your contributions will be licensed under the [Apache License 2.0](LICENSE), the same license that covers this project.
 
 ---
 
