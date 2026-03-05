@@ -31,10 +31,12 @@ param(
 $ErrorActionPreference = "Stop"
 
 # ── Locate libraries ──
+# NOTE: Nested Join-Path required — PS 5.1 only accepts 2 arguments
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-. (Join-Path $ScriptDir "lib" "constants.ps1")
-. (Join-Path $ScriptDir "lib" "ui.ps1")
-. (Join-Path $ScriptDir "lib" "detection.ps1")
+$LibDir = Join-Path $ScriptDir "lib"
+. (Join-Path $LibDir "constants.ps1")
+. (Join-Path $LibDir "ui.ps1")
+. (Join-Path $LibDir "detection.ps1")
 
 # ── Resolve install directory ──
 $InstallDir = $script:DS_INSTALL_DIR
@@ -42,6 +44,20 @@ $InstallDir = $script:DS_INSTALL_DIR
 # ============================================================================
 # Helpers
 # ============================================================================
+
+function Test-DockerRunning {
+    <#
+    .SYNOPSIS
+        Quick check if Docker daemon is responsive. Shows friendly message if not.
+    #>
+    $null = docker info 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        Write-AIError "Docker Desktop is not running."
+        Write-AI "Start it from the Start Menu, then try again."
+        return $false
+    }
+    return $true
+}
 
 function Test-Install {
     if (-not (Test-Path $InstallDir)) {
@@ -54,6 +70,7 @@ function Test-Install {
         Write-AIError "docker-compose.base.yml not found in $InstallDir"
         exit 1
     }
+    if (-not (Test-DockerRunning)) { exit 1 }
 }
 
 function Get-ComposeFlags {
@@ -83,7 +100,7 @@ function Get-ComposeFlags {
     }
 
     # Add enabled extension compose files
-    $extDir = Join-Path $InstallDir "extensions" "services"
+    $extDir = Join-Path (Join-Path $InstallDir "extensions") "services"
     if (Test-Path $extDir) {
         Get-ChildItem -Path $extDir -Directory | ForEach-Object {
             $composePath = Join-Path $_.FullName "compose.yaml"
@@ -180,7 +197,7 @@ function Start-NativeLlamaServer {
     if (-not $ggufFile) { $ggufFile = "Qwen3-8B-Q4_K_M.gguf" }
     if (-not $ctxSize)  { $ctxSize = "16384" }
 
-    $modelPath = Join-Path $InstallDir "data" "models" $ggufFile
+    $modelPath = Join-Path (Join-Path $InstallDir "data\models") $ggufFile
     if (-not (Test-Path $modelPath)) {
         Write-AIError "Model not found: $modelPath"
         return

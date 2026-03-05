@@ -86,15 +86,19 @@ function Show-ProgressDownload {
     )
     Write-AI "$Label..."
     # Use curl.exe (ships with Windows 10+) for resume-capable download with progress
+    # Direct invocation (&) instead of Start-Process so the progress bar is visible
     $partFile = "$Destination.part"
-    $curlArgs = @("-C", "-", "-L", "--progress-bar", "-o", $partFile, $Url)
-    $proc = Start-Process -FilePath "curl.exe" -ArgumentList $curlArgs -NoNewWindow -Wait -PassThru
-    if ($proc.ExitCode -eq 0 -and (Test-Path $partFile)) {
+    & curl.exe -C - -L --progress-bar -o $partFile $Url
+    $curlExit = $LASTEXITCODE
+    if ($curlExit -eq 0 -and (Test-Path $partFile)) {
         Move-Item -Path $partFile -Destination $Destination -Force
         Write-AISuccess "$Label complete"
         return $true
     } else {
-        Write-AIError "$Label failed (curl exit code: $($proc.ExitCode))"
+        $curlErrors = @{ 6="Could not resolve host"; 7="Connection refused"; 18="Partial transfer"; 28="Timeout"; 35="SSL error"; 56="Network failure" }
+        $hint = $(if ($curlErrors.ContainsKey($curlExit)) { " ($($curlErrors[$curlExit]))" } else { "" })
+        Write-AIError "$Label failed (curl exit code: $curlExit$hint)"
+        Write-AI "Re-run the installer to resume the download."
         return $false
     }
 }
@@ -104,10 +108,14 @@ function Write-SuccessCard {
         [string]$WebUIPort = "3000",
         [string]$DashboardPort = "3001"
     )
-    # Detect local IP for network access
-    $localIP = (Get-NetIPAddress -AddressFamily IPv4 |
-        Where-Object { $_.InterfaceAlias -notlike "*Loopback*" -and $_.PrefixOrigin -eq "Dhcp" } |
-        Select-Object -First 1).IPAddress
+    # Detect local IP for network access (DHCP, static, or manual — exclude loopback + APIPA)
+    $localIP = (Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
+        Where-Object {
+            $_.InterfaceAlias -notlike "*Loopback*" -and
+            $_.IPAddress -notlike "127.*" -and
+            $_.IPAddress -notlike "169.254.*" -and
+            $_.PrefixOrigin -in @("Dhcp", "Manual")
+        } | Select-Object -First 1).IPAddress
     if (-not $localIP) { $localIP = "your-ip" }
 
     Write-Host ""

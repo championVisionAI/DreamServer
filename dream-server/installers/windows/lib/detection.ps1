@@ -186,7 +186,16 @@ function Test-DockerDesktop {
                 if ($kernelVersion -match "microsoft|WSL") {
                     $result.WSL2Backend = $true
                 }
-                # Check for NVIDIA GPU support in Docker
+                # Check for GPU support in Docker
+                # On Windows Docker Desktop with WSL2 backend, GPU passthrough is
+                # handled automatically — there is no separate "nvidia" runtime like
+                # on Linux. If WSL2 backend is detected + NVIDIA driver is present,
+                # GPU support is available via --gpus flag / compose deploy.resources.
+                if ($result.WSL2Backend) {
+                    $nvsmi = Get-Command nvidia-smi -ErrorAction SilentlyContinue
+                    if ($nvsmi) { $result.GpuSupport = $true }
+                }
+                # Also check Linux-style runtime (in case running Docker Engine directly)
                 if ($info.Runtimes -and $info.Runtimes.nvidia) {
                     $result.GpuSupport = $true
                 }

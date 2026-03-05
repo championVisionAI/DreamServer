@@ -39,14 +39,16 @@ $ErrorActionPreference = "Stop"
 
 # ── Locate script directory and source tree root ──
 $ScriptDir   = Split-Path -Parent $MyInvocation.MyCommand.Path
-$SourceRoot  = (Resolve-Path (Join-Path $ScriptDir ".." "..")).Path
+# NOTE: Nested Join-Path required — PS 5.1 only accepts 2 arguments
+$SourceRoot  = (Resolve-Path (Join-Path (Join-Path $ScriptDir "..") "..")).Path
 
 # ── Source libraries ──
-. (Join-Path $ScriptDir "lib" "constants.ps1")
-. (Join-Path $ScriptDir "lib" "ui.ps1")
-. (Join-Path $ScriptDir "lib" "tier-map.ps1")
-. (Join-Path $ScriptDir "lib" "detection.ps1")
-. (Join-Path $ScriptDir "lib" "env-generator.ps1")
+$LibDir = Join-Path $ScriptDir "lib"
+. (Join-Path $LibDir "constants.ps1")
+. (Join-Path $LibDir "ui.ps1")
+. (Join-Path $LibDir "tier-map.ps1")
+. (Join-Path $LibDir "detection.ps1")
+. (Join-Path $LibDir "env-generator.ps1")
 
 # ── Resolve install directory ──
 $InstallDir = $script:DS_INSTALL_DIR
@@ -76,7 +78,10 @@ if (-not $docker.Installed) {
 Write-AISuccess "Docker CLI found"
 
 if (-not $docker.Running) {
-    Write-AIError "Docker Desktop is not running. Start it and try again."
+    Write-AIError "Docker Desktop is not running."
+    Write-AI "Start it from the Start Menu, or run:"
+    Write-Host "  & 'C:\Program Files\Docker\Docker\Docker Desktop.exe'" -ForegroundColor Cyan
+    Write-AI "Then re-run this installer."
     exit 1
 }
 Write-AISuccess "Docker Desktop running (v$($docker.Version))"
@@ -140,6 +145,16 @@ Write-InfoBox "Model:" "$($tierConfig.LlmModel)"
 Write-InfoBox "GGUF:" "$($tierConfig.GgufFile)"
 Write-InfoBox "Context:" "$($tierConfig.MaxContext)"
 
+# Re-check disk space now that tier (and model size) is known
+# Tier 1-2: ~5GB model, Tier 3: ~9GB, Tier 4+: ~18GB, plus ~15GB for Docker images
+$modelGB = $(if ($tierConfig.GgufFile -match "14B") { 12 } elseif ($tierConfig.GgufFile -match "30B") { 20 } else { 8 })
+$neededGB = $modelGB + 15  # model + Docker images headroom
+$disk2 = Test-DiskSpace -Path $InstallDir -RequiredGB $neededGB
+if (-not $disk2.Sufficient) {
+    Write-AIWarn "Tier $selectedTier needs ~$neededGB GB (model + Docker images). Only $($disk2.FreeGB) GB free on $($disk2.Drive)."
+    if (-not $Force) { exit 1 }
+}
+
 # ============================================================================
 # STEP 3 — FEATURE SELECTION
 # ============================================================================
@@ -202,18 +217,21 @@ if ($DryRun) {
     if ($enableOpenClaw) { Write-AI "[DRY RUN] Would configure OpenClaw" }
 } else {
     # Create directory structure
+    # NOTE: Nested Join-Path required — PS 5.1 only accepts 2 arguments
+    $configDir = Join-Path $InstallDir "config"
+    $dataDir   = Join-Path $InstallDir "data"
     $dirs = @(
-        (Join-Path $InstallDir "config" "searxng"),
-        (Join-Path $InstallDir "config" "n8n"),
-        (Join-Path $InstallDir "config" "litellm"),
-        (Join-Path $InstallDir "config" "openclaw"),
-        (Join-Path $InstallDir "config" "llama-server"),
-        (Join-Path $InstallDir "data" "open-webui"),
-        (Join-Path $InstallDir "data" "whisper"),
-        (Join-Path $InstallDir "data" "tts"),
-        (Join-Path $InstallDir "data" "n8n"),
-        (Join-Path $InstallDir "data" "qdrant"),
-        (Join-Path $InstallDir "data" "models")
+        (Join-Path $configDir "searxng"),
+        (Join-Path $configDir "n8n"),
+        (Join-Path $configDir "litellm"),
+        (Join-Path $configDir "openclaw"),
+        (Join-Path $configDir "llama-server"),
+        (Join-Path $dataDir "open-webui"),
+        (Join-Path $dataDir "whisper"),
+        (Join-Path $dataDir "tts"),
+        (Join-Path $dataDir "n8n"),
+        (Join-Path $dataDir "qdrant"),
+        (Join-Path $dataDir "models")
     )
     foreach ($d in $dirs) {
         New-Item -ItemType Directory -Path $d -Force | Out-Null
@@ -281,7 +299,7 @@ if ($DryRun) {
     }
 
     # Create llama-server models.ini (empty — populated later)
-    $modelsIni = Join-Path $InstallDir "config" "llama-server" "models.ini"
+    $modelsIni = Join-Path (Join-Path $InstallDir "config") "llama-server\models.ini"
     if (-not (Test-Path $modelsIni)) {
         Write-Utf8NoBom -Path $modelsIni -Content "# Dream Server model registry"
     }
@@ -308,7 +326,7 @@ if ($DryRun) {
     try {
         # ── Download GGUF model (if not cloud-only) ──
         if ($tierConfig.GgufUrl -and -not $Cloud) {
-            $modelPath = Join-Path $InstallDir "data" "models" $tierConfig.GgufFile
+            $modelPath = Join-Path (Join-Path $InstallDir "data\models") $tierConfig.GgufFile
             if (Test-Path $modelPath) {
                 Write-AISuccess "Model already downloaded: $($tierConfig.GgufFile)"
             } else {
@@ -359,7 +377,7 @@ if ($DryRun) {
 
             # Start native llama-server
             Write-AI "Starting native llama-server (Vulkan)..."
-            $modelFullPath = Join-Path $InstallDir "data" "models" $tierConfig.GgufFile
+            $modelFullPath = Join-Path (Join-Path $InstallDir "data\models") $tierConfig.GgufFile
             $llamaArgs = @(
                 "--model", $modelFullPath,
                 "--host", "0.0.0.0",
@@ -417,7 +435,7 @@ if ($DryRun) {
         # Discover enabled extension compose fragments via manifests
         # Mirrors resolve-compose-stack.sh: reads manifest.yaml, checks schema_version
         # and gpu_backends before including a service's compose file.
-        $extDir = Join-Path $InstallDir "extensions" "services"
+        $extDir = Join-Path (Join-Path $InstallDir "extensions") "services"
         $currentBackend = $(if ($Cloud) { "none" } else { $gpuInfo.Backend })
 
         if (Test-Path $extDir) {
@@ -486,6 +504,18 @@ if ($DryRun) {
         # Docker compose override (user customizations)
         if (Test-Path (Join-Path $InstallDir "docker-compose.override.yml")) {
             $composeFlags += @("-f", "docker-compose.override.yml")
+        }
+
+        # ── Validate compose files exist before launching ──
+        for ($fi = 0; $fi -lt $composeFlags.Count; $fi++) {
+            if ($composeFlags[$fi] -eq "-f" -and ($fi + 1) -lt $composeFlags.Count) {
+                $cf = $composeFlags[$fi + 1]
+                if (-not (Test-Path $cf)) {
+                    Write-AIError "Compose file not found: $cf"
+                    Write-AI "The source tree may not have copied correctly. Try re-running with --Force."
+                    exit 1
+                }
+            }
         }
 
         # ── Start Docker services ──

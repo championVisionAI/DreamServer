@@ -23,7 +23,7 @@ $script:DS_PREFLIGHT_REPORT = Join-Path $env:TEMP "dream-server-windows-prefligh
 # Native llama-server paths (AMD Strix Halo Vulkan path only)
 $script:LLAMA_SERVER_DIR = Join-Path $script:DS_INSTALL_DIR "llama-server"
 $script:LLAMA_SERVER_EXE = Join-Path $script:LLAMA_SERVER_DIR "llama-server.exe"
-$script:LLAMA_SERVER_PID_FILE = Join-Path $script:DS_INSTALL_DIR "data" "llama-server.pid"
+$script:LLAMA_SERVER_PID_FILE = Join-Path (Join-Path $script:DS_INSTALL_DIR "data") "llama-server.pid"
 
 # llama.cpp release for Vulkan build (update when new releases ship)
 $script:LLAMA_CPP_RELEASE_TAG = "b5570"

@@ -106,7 +106,10 @@ function New-DreamEnv {
         $ianaId = $null
         try {
             # Works on .NET 6+ / PS 7+
-            $ianaId = [System.TimeZoneInfo]::TryConvertWindowsIdToIanaId($tzInfo.Id, [ref]$null)
+            # TryConvert returns bool; the IANA ID is written to the [ref] out-param
+            $outIana = $null
+            $ok = [System.TimeZoneInfo]::TryConvertWindowsIdToIanaId($tzInfo.Id, [ref]$outIana)
+            if ($ok -and $outIana) { $ianaId = $outIana }
         } catch { }
         if ($ianaId) { $ianaId } else {
             switch -Wildcard ($tzInfo.Id) {
@@ -240,7 +243,7 @@ function New-SearxngConfig {
         [string]$SecretKey
     )
 
-    $configDir = Join-Path $InstallDir "config" "searxng"
+    $configDir = Join-Path (Join-Path $InstallDir "config") "searxng"
     New-Item -ItemType Directory -Path $configDir -Force | Out-Null
 
     $config = @"
@@ -290,9 +293,10 @@ function New-OpenClawConfig {
     )
 
     # Create directories
-    $homeDir  = Join-Path $InstallDir "data" "openclaw" "home"
-    $agentDir = Join-Path $homeDir "agents" "main" "agent"
-    $sessDir  = Join-Path $homeDir "agents" "main" "sessions"
+    # NOTE: Nested Join-Path required — PS 5.1 only accepts 2 arguments
+    $homeDir  = Join-Path (Join-Path (Join-Path $InstallDir "data") "openclaw") "home"
+    $agentDir = Join-Path (Join-Path (Join-Path $homeDir "agents") "main") "agent"
+    $sessDir  = Join-Path (Join-Path (Join-Path $homeDir "agents") "main") "sessions"
     New-Item -ItemType Directory -Path $agentDir -Force | Out-Null
     New-Item -ItemType Directory -Path $sessDir -Force | Out-Null
 
@@ -393,6 +397,6 @@ function New-OpenClawConfig {
     Write-Utf8NoBom -Path (Join-Path $agentDir "models.json") -Content $modelsConfig
 
     # Workspace directory (must exist before Docker Compose)
-    $workspaceDir = Join-Path $InstallDir "config" "openclaw" "workspace" "memory"
+    $workspaceDir = Join-Path (Join-Path (Join-Path (Join-Path $InstallDir "config") "openclaw") "workspace") "memory"
     New-Item -ItemType Directory -Path $workspaceDir -Force | Out-Null
 }
