@@ -128,12 +128,11 @@ if ($gpuInfo.Backend -eq "nvidia") {
         Write-AIWarn "Docker GPU support not confirmed. NVIDIA Container Toolkit may need configuration."
     }
     if ($gpuInfo.IsBlackwell) {
-        Write-AI "Blackwell GPU detected (sm_120). Will use CUDA 13 Docker image"
-        Write-AI "  with native Blackwell support (server-cuda13)."
+        Write-AISuccess "Blackwell GPU detected (sm_120). Supported via PTX JIT in standard CUDA image."
     }
 }
 
-# Track llama-server image override (set during Blackwell build if needed)
+# Track llama-server image override (reserved for future use)
 $llamaServerImage = ""
 
 # Auto-select tier (or use override)
@@ -327,9 +326,6 @@ if ($DryRun) {
         Write-AI "[DRY RUN] Would download llama-server.exe (Vulkan build)"
         Write-AI "[DRY RUN] Would start native llama-server on port 8080"
     }
-    if ($gpuInfo.IsBlackwell) {
-        Write-AI "[DRY RUN] Would use CUDA 13 image: ghcr.io/ggml-org/llama.cpp:server-cuda13"
-    }
     Write-AI "[DRY RUN] Would run: docker compose up -d"
     if (-not $Cloud) {
         Write-AI "[DRY RUN] Would install OpenCode v$($script:OPENCODE_VERSION) to $($script:OPENCODE_EXE)"
@@ -472,34 +468,8 @@ if ($DryRun) {
             }
         }
 
-        # ── Blackwell: use CUDA 13 Docker image with sm_120 support ──
-        if ($gpuInfo.IsBlackwell -and -not $Cloud) {
-            Write-Chapter "BLACKWELL GPU IMAGE"
-            # The default server-cuda image (CUDA 12.4) lacks sm_120 kernels.
-            # The server-cuda13 image (CUDA 13.1) includes 120a-real natively.
-            $blackwellImage = "ghcr.io/ggml-org/llama.cpp:server-cuda13"
-            Write-AI "Using CUDA 13.1 image with native Blackwell support:"
-            Write-AI "  $blackwellImage"
-
-            # Check if a locally-built custom image exists (from a previous manual build)
-            $localImage = "llama-server-cuda-blackwell"
-            $localExists = docker image inspect $localImage 2>$null
-            if ($LASTEXITCODE -eq 0) {
-                Write-AI "Local custom image '$localImage' also found."
-                Write-AI "Using the official CUDA 13 image (upstream-maintained)."
-            }
-
-            $llamaServerImage = $blackwellImage
-            Write-AISuccess "Blackwell image configured: $llamaServerImage"
-
-            # Patch .env with LLAMA_SERVER_IMAGE (generated earlier before build)
-            $envPath = Join-Path $InstallDir ".env"
-            $envContent = [System.IO.File]::ReadAllText($envPath)
-            $envContent = $envContent -replace "#LLAMA_SERVER_IMAGE=.*", "LLAMA_SERVER_IMAGE=$llamaServerImage"
-            $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
-            [System.IO.File]::WriteAllText($envPath, $envContent, $utf8NoBom)
-            Write-AISuccess "Set LLAMA_SERVER_IMAGE=$llamaServerImage in .env"
-        }
+        # NOTE: Blackwell GPUs (sm_120) work with the standard server-cuda image
+        # via PTX JIT compilation. No special image override is needed.
 
         # ── Assemble Docker Compose flags ──
         $composeFlags = @("-f", "docker-compose.base.yml")
