@@ -91,7 +91,7 @@ RUN useradd -m -u 1000 -s /bin/bash comfyui \
     && chown -R comfyui:comfyui "$COMFYUI_DIR"
 
 COPY --chown=comfyui:comfyui startup.sh /opt/startup.sh
-RUN chmod +x /opt/startup.sh
+RUN sed -i 's/\r$//' /opt/startup.sh && chmod +x /opt/startup.sh
 
 USER comfyui
 WORKDIR $COMFYUI_DIR

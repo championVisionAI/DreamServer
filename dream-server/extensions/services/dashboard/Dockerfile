@@ -30,7 +30,7 @@ COPY nginx.conf /etc/nginx/conf.d/default.conf
 
 # Copy entrypoint script for runtime auth configuration
 COPY entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+RUN sed -i 's/\r$//' /entrypoint.sh && chmod +x /entrypoint.sh
 
 # Expose port 3001
 EXPOSE 3001
