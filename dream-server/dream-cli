@@ -782,6 +782,30 @@ cmd_model() {
     esac
 }
 
+cmd_backup() {
+    check_install
+    cd "$INSTALL_DIR"
+
+    if [[ ! -x "$INSTALL_DIR/dream-backup.sh" ]]; then
+        error "dream-backup.sh not found or not executable"
+    fi
+
+    # Pass all arguments to dream-backup.sh
+    "$INSTALL_DIR/dream-backup.sh" "$@"
+}
+
+cmd_restore() {
+    check_install
+    cd "$INSTALL_DIR"
+
+    if [[ ! -x "$INSTALL_DIR/dream-restore.sh" ]]; then
+        error "dream-restore.sh not found or not executable"
+    fi
+
+    # Pass all arguments to dream-restore.sh
+    "$INSTALL_DIR/dream-restore.sh" "$@"
+}
+
 cmd_help() {
     sr_load
     cat << EOF
@@ -799,6 +823,8 @@ ${CYAN}Commands:${NC}
                       Switch between local/cloud/hybrid modes
   model [current|list|swap]
                       View or change the local LLM model tier
+  backup [options]    Create a backup of user data and config
+  restore [backup_id] Restore from a backup
   logs <service>      Tail logs for a service
   restart [service]   Restart services (all if no service specified)
   start [service]     Start services
@@ -855,6 +881,11 @@ ${CYAN}Examples:${NC}
   dream mode local                # Switch to local mode
   dream preset save my-setup      # Snapshot your config
   dream preset load my-setup      # Restore it later
+  dream backup                    # Create a backup
+  dream backup -c                 # Create compressed backup
+  dream backup -l                 # List all backups
+  dream restore                   # Interactive restore
+  dream restore 20260309-120000   # Restore specific backup
   dream logs llm                  # Watch llama-server logs (via alias)
   dream restart stt               # Restart Whisper (via alias)
   dream chat "What is 2+2?"      # Quick LLM test
@@ -877,6 +908,8 @@ case "${1:-help}" in
     preset|p)    shift; cmd_preset "$@" ;;
     mode|m)      shift; cmd_mode "$@" ;;
     model)       shift; cmd_model "$@" ;;
+    backup)      shift; cmd_backup "$@" ;;
+    restore)     shift; cmd_restore "$@" ;;
     logs|log|l)  shift; cmd_logs "$@" ;;
     restart|r)   shift; cmd_restart "$@" ;;
     start)       shift; cmd_start "$@" ;;
