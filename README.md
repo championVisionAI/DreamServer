@@ -336,12 +336,12 @@ Thanks to [kyuz0](https://github.com/kyuz0) for [amd-strix-halo-toolboxes](https
 
 ### Community Contributors
 
-*   [Yasin Bursali (yasinBursali)](https://github.com/yasinBursali) — Fixed CI workflow discovery, added dashboard-api router test coverage with security-focused tests (auth enforcement, path traversal protection), and documented all 14 undocumented extension services
+*   [Yasin Bursali (yasinBursali)](https://github.com/yasinBursali) — Fixed CI workflow discovery, added dashboard-api router test coverage with security-focused tests (auth enforcement, path traversal protection), documented all 14 undocumented extension services, fixed macOS disk space preflight to check the correct volume for external drive installs, and moved embeddings platform override to prevent orphaned service errors when RAG is disabled
 *   [latentcollapse (Matt C)](https://github.com/latentcollapse) — Security audit and hardening: OpenClaw localhost binding fix, multi-GPU VRAM detection, AMD dashboard hardening, and the Agent Policy Engine (APE) extension
 *   [Igor Lins e Silva (igorls)](https://github.com/igorls) — Stability audit fixing 9 infrastructure bugs: dynamic compose discovery in backup/restore/update scripts, Token Spy persistent storage and connection pool hardening, dotglob rollback fix, and systemd auto-resume service correction
 *   [Nino Skopac (NinoSkopac)](https://github.com/NinoSkopac) — Token Spy dashboard improvements: shared metric normalization with parity tests, budget and active session tracking, configurable secure CORS replacing wildcard origins, and DB backend compatibility shim for sidecar migration
 *   [Glexy (fullstackdev0110)](https://github.com/fullstackdev0110) — Fixed dream-cli chat port initialization bug and hardened validate.sh environment variable handling with safer quoting and .env parsing
-*   [bugman-007](https://github.com/bugman-007) — Parallelized health checks in dream status for 5–10× speedup using async gather with proper timeout handling, plus benchmark and test scripts
+*   [bugman-007](https://github.com/bugman-007) — Parallelized health checks in dream status for 5–10× speedup using async gather with proper timeout handling, benchmark and test scripts, and integrated backup/restore commands into dream-cli
 *   [norfrt6-lab](https://github.com/norfrt6-lab) — Replaced 12+ silent exception-swallowing patterns with specific exception types and proper logging, added cross-platform system metrics (macOS/Windows) for uptime, CPU, and RAM, plus Apple Silicon GPU detection via sysctl/vm_stat
 
 If we missed anyone, [open an issue](https://github.com/Light-Heart-Labs/DreamServer/issues). We want to get this right.
