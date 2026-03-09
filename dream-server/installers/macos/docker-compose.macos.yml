@@ -21,7 +21,3 @@ services:
   open-webui:
     environment:
       OPENAI_API_BASE_URL: "http://host.docker.internal:8080/v1"
-
-  # TEI has no arm64 image -- run under Rosetta 2 emulation
-  embeddings:
-    platform: linux/amd64
