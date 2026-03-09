@@ -281,3 +281,99 @@ def test_dashboard_and_sidecar_normalization_are_in_parity(
             avg_ttft_ms=avg_ttft_ms,
         )
         assert dashboard_result == sidecar_result
+
+
+@pytest.mark.parametrize(
+    "raw_origins, expected",
+    [
+        ("", []),
+        ("   ", []),
+        ("http://localhost:3000", ["http://localhost:3000"]),
+        (
+            "http://localhost:3000, http://127.0.0.1:3000",
+            ["http://localhost:3000", "http://127.0.0.1:3000"],
+        ),
+        (
+            '["http://localhost:3000", "http://127.0.0.1:3000"]',
+            ["http://localhost:3000", "http://127.0.0.1:3000"],
+        ),
+    ],
+)
+def test_parse_allowed_origins_accepts_csv_and_json(
+    dashboard_main_module,
+    raw_origins,
+    expected,
+):
+    assert dashboard_main_module.parse_allowed_origins(raw_origins) == expected
+
+
+@pytest.mark.parametrize(
+    "raw_origins",
+    [
+        '["http://localhost:3000",]',
+        '{"origin": "http://localhost:3000"}',
+        "[1, 2]",
+    ],
+)
+def test_parse_allowed_origins_rejects_invalid_json(dashboard_main_module, raw_origins):
+    with pytest.raises(ValueError):
+        dashboard_main_module.parse_allowed_origins(raw_origins)
+
+
+def test_get_cors_settings_rejects_credentials_with_wildcard(
+    dashboard_main_module,
+    monkeypatch,
+    caplog,
+):
+    monkeypatch.setattr(dashboard_main_module.settings, "dashboard_allowed_origins", "*")
+    monkeypatch.setattr(
+        dashboard_main_module.settings,
+        "dashboard_cors_allow_credentials",
+        True,
+    )
+
+    with caplog.at_level("ERROR"):
+        with pytest.raises(ValueError, match="insecure CORS config"):
+            dashboard_main_module.get_cors_settings()
+
+    assert "cannot be combined with wildcard origin '*'" in caplog.text
+
+
+def test_get_cors_settings_allows_wildcard_without_credentials(
+    dashboard_main_module,
+    monkeypatch,
+    caplog,
+):
+    monkeypatch.setattr(dashboard_main_module.settings, "dashboard_allowed_origins", "*")
+    monkeypatch.setattr(
+        dashboard_main_module.settings,
+        "dashboard_cors_allow_credentials",
+        False,
+    )
+
+    with caplog.at_level("WARNING"):
+        cors_settings = dashboard_main_module.get_cors_settings()
+
+    assert cors_settings["allow_origins"] == ["*"]
+    assert cors_settings["allow_credentials"] is False
+    assert "wildcard origin '*'" in caplog.text
+
+
+def test_get_cors_settings_logs_empty_allowlist_info(
+    dashboard_main_module,
+    monkeypatch,
+    caplog,
+):
+    monkeypatch.setattr(dashboard_main_module.settings, "dashboard_allowed_origins", "")
+    monkeypatch.setattr(
+        dashboard_main_module.settings,
+        "dashboard_cors_allow_credentials",
+        True,
+    )
+
+    with caplog.at_level("INFO"):
+        cors_settings = dashboard_main_module.get_cors_settings()
+
+    assert cors_settings["allow_origins"] == []
+    assert cors_settings["allow_credentials"] is True
+    assert "CORS allowlist is empty" in caplog.text

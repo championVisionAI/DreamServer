@@ -19,6 +19,7 @@ Endpoints:
 import os
 import asyncio
 import logging
+import json
 from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Optional, List, Dict, Any, Literal
@@ -51,6 +52,8 @@ class Settings(BaseSettings):
     dashboard_auth_enabled: bool = False
     dashboard_username: str = "admin"
     dashboard_password: Optional[str] = Field(default=None, description="Dashboard password (required when auth enabled)")
+    dashboard_allowed_origins: str = ""
+    dashboard_cors_allow_credentials: bool = True
     
     class Config:
         env_file = ".env"
@@ -96,6 +99,63 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
 )
 logger = logging.getLogger("token-spy-dashboard")
+
+
+def parse_allowed_origins(raw_origins: str) -> List[str]:
+    """Parse CORS origins from CSV or JSON array."""
+    value = (raw_origins or "").strip()
+    if not value:
+        return []
+
+    if value.startswith("{"):
+        raise ValueError(
+            "DASHBOARD_ALLOWED_ORIGINS JSON format must be an array, not an object"
+        )
+
+    if value.startswith("["):
+        try:
+            parsed = json.loads(value)
+        except json.JSONDecodeError as exc:
+            raise ValueError(
+                "DASHBOARD_ALLOWED_ORIGINS must be valid CSV or JSON array"
+            ) from exc
+
+        if not isinstance(parsed, list) or not all(isinstance(item, str) for item in parsed):
+            raise ValueError("DASHBOARD_ALLOWED_ORIGINS JSON format must be an array of strings")
+        return [origin.strip() for origin in parsed if origin.strip()]
+
+    return [origin.strip() for origin in value.split(",") if origin.strip()]
+
+
+def get_cors_settings() -> Dict[str, Any]:
+    """Return validated CORS settings from environment configuration."""
+    allow_origins = parse_allowed_origins(settings.dashboard_allowed_origins)
+    allow_credentials = settings.dashboard_cors_allow_credentials
+    has_wildcard = "*" in allow_origins
+
+    if allow_credentials and has_wildcard:
+        logger.error(
+            "Invalid CORS config: DASHBOARD_CORS_ALLOW_CREDENTIALS=true cannot be combined "
+            "with wildcard origin '*' in DASHBOARD_ALLOWED_ORIGINS."
+        )
+        raise ValueError(
+            "Refusing to start with insecure CORS config: credentials + wildcard origin"
+        )
+
+    if has_wildcard:
+        logger.warning(
+            "CORS is configured with wildcard origin '*'. This should only be used in controlled local development."
+        )
+    elif not allow_origins:
+        logger.info(
+            "CORS allowlist is empty; cross-origin browser requests are disabled. "
+            "Set DASHBOARD_ALLOWED_ORIGINS for explicit trusted origins."
+        )
+
+    return {
+        "allow_origins": allow_origins,
+        "allow_credentials": allow_credentials,
+    }
 
 
 def normalize_cost_and_speed_metrics(
@@ -181,10 +241,11 @@ app = FastAPI(
 )
 
 # CORS for React frontend
+cors_settings = get_cors_settings()
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=cors_settings["allow_origins"],
+    allow_credentials=cors_settings["allow_credentials"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
