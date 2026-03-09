@@ -17,6 +17,21 @@ from models import ServiceStatus, DiskUsage, ModelInfo, BootstrapStatus
 
 logger = logging.getLogger(__name__)
 
+# --- Shared HTTP session (connection pooling) ---
+# Re-using a single ClientSession avoids creating/destroying 17+ TCP
+# connections every poll cycle and prevents file-descriptor exhaustion.
+
+_aio_session: Optional[aiohttp.ClientSession] = None
+_HEALTH_TIMEOUT = aiohttp.ClientTimeout(total=5)   # match Docker's own 5 s timeout
+
+
+async def _get_aio_session() -> aiohttp.ClientSession:
+    """Return (and lazily create) a module-level aiohttp session."""
+    global _aio_session
+    if _aio_session is None or _aio_session.closed:
+        _aio_session = aiohttp.ClientSession(timeout=_HEALTH_TIMEOUT)
+    return _aio_session
+
 
 # --- Token Tracking ---
 
@@ -56,15 +71,19 @@ def _get_lifetime_tokens() -> int:
 
 # --- LLM Metrics ---
 
-async def get_llama_metrics() -> dict:
-    """Get inference metrics from llama-server Prometheus /metrics endpoint."""
+async def get_llama_metrics(model_hint: Optional[str] = None) -> dict:
+    """Get inference metrics from llama-server Prometheus /metrics endpoint.
+
+    Accepts an optional *model_hint* so callers that already resolved the
+    loaded model name can avoid a redundant HTTP round-trip.
+    """
     try:
         host = SERVICES["llama-server"]["host"]
         port = SERVICES["llama-server"]["port"]
-        model_name = await get_loaded_model() or ""
+        model_name = model_hint if model_hint is not None else (await get_loaded_model() or "")
         url = f"http://{host}:{port}/metrics"
         params = {"model": model_name} if model_name else {}
-        async with httpx.AsyncClient(timeout=3.0) as client:
+        async with httpx.AsyncClient(timeout=5.0) as client:
             resp = await client.get(url, params=params)
 
         metrics = {}
@@ -99,7 +118,7 @@ async def get_loaded_model() -> Optional[str]:
     try:
         host = SERVICES["llama-server"]["host"]
         port = SERVICES["llama-server"]["port"]
-        async with httpx.AsyncClient(timeout=3.0) as client:
+        async with httpx.AsyncClient(timeout=5.0) as client:
             resp = await client.get(f"http://{host}:{port}/v1/models")
         models = resp.json().get("data", [])
         for m in models:
@@ -113,16 +132,20 @@ async def get_loaded_model() -> Optional[str]:
     return None
 
 
-async def get_llama_context_size() -> Optional[int]:
-    """Query llama-server /props for the actual n_ctx."""
+async def get_llama_context_size(model_hint: Optional[str] = None) -> Optional[int]:
+    """Query llama-server /props for the actual n_ctx.
+
+    Accepts an optional *model_hint* to skip the redundant
+    ``get_loaded_model()`` call when the caller already has it.
+    """
     try:
         host = SERVICES["llama-server"]["host"]
         port = SERVICES["llama-server"]["port"]
-        loaded = await get_loaded_model()
+        loaded = model_hint if model_hint is not None else await get_loaded_model()
         url = f"http://{host}:{port}/props"
         if loaded:
             url += f"?model={loaded}"
-        async with httpx.AsyncClient(timeout=3.0) as client:
+        async with httpx.AsyncClient(timeout=5.0) as client:
             resp = await client.get(url)
         n_ctx = resp.json().get("default_generation_settings", {}).get("n_ctx")
         return int(n_ctx) if n_ctx else None
@@ -143,11 +166,11 @@ async def check_service_health(service_id: str, config: dict) -> ServiceStatus:
     response_time = None
 
     try:
+        session = await _get_aio_session()
         start = asyncio.get_event_loop().time()
-        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=3)) as session:
-            async with session.get(url) as resp:
-                response_time = (asyncio.get_event_loop().time() - start) * 1000
-                status = "healthy" if resp.status < 500 else "unhealthy"
+        async with session.get(url) as resp:
+            response_time = (asyncio.get_event_loop().time() - start) * 1000
+            status = "healthy" if resp.status < 500 else "unhealthy"
     except asyncio.TimeoutError:
         # Service is reachable but slow — report degraded rather than down
         # to avoid false "offline" flashes during startup or heavy load.
@@ -176,11 +199,11 @@ async def _check_host_service_health(service_id: str, config: dict) -> ServiceSt
     status = "down"
     response_time = None
     try:
+        session = await _get_aio_session()
         start = asyncio.get_event_loop().time()
-        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=3)) as session:
-            async with session.get(url) as resp:
-                response_time = (asyncio.get_event_loop().time() - start) * 1000
-                status = "healthy" if resp.status < 500 else "unhealthy"
+        async with session.get(url) as resp:
+            response_time = (asyncio.get_event_loop().time() - start) * 1000
+            status = "healthy" if resp.status < 500 else "unhealthy"
     except aiohttp.ClientConnectorError:
         status = "down"
     except Exception as e:
@@ -194,9 +217,26 @@ async def _check_host_service_health(service_id: str, config: dict) -> ServiceSt
 
 
 async def get_all_services() -> list[ServiceStatus]:
-    """Get all service health statuses."""
+    """Get all service health statuses.
+
+    Uses ``return_exceptions=True`` so that one misbehaving service
+    cannot take down the entire status response.
+    """
     tasks = [check_service_health(sid, cfg) for sid, cfg in SERVICES.items()]
-    return await asyncio.gather(*tasks)
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+
+    statuses: list[ServiceStatus] = []
+    for (sid, cfg), result in zip(SERVICES.items(), results):
+        if isinstance(result, BaseException):
+            logger.warning("Health check for %s raised %s: %s", sid, type(result).__name__, result)
+            statuses.append(ServiceStatus(
+                id=sid, name=cfg["name"], port=cfg["port"],
+                external_port=cfg.get("external_port", cfg["port"]),
+                status="down", response_time_ms=None,
+            ))
+        else:
+            statuses.append(result)
+    return statuses
 
 
 # --- System Metrics ---

@@ -234,13 +234,44 @@ async def status(api_key: str = Depends(verify_api_key)):
 
 @app.get("/api/status")
 async def api_status(api_key: str = Depends(verify_api_key)):
-    """Dashboard-compatible status endpoint."""
+    """Dashboard-compatible status endpoint.
+
+    Wrapped in a top-level try/except so that a transient failure in any
+    sub-call (GPU, health checks, llama metrics …) never returns a raw 500
+    to the dashboard — the frontend would flash "0/17" otherwise.
+    """
+    try:
+        return await _build_api_status()
+    except Exception:
+        logger.exception("/api/status handler failed — returning safe fallback")
+        return {
+            "gpu": None, "services": [], "model": None,
+            "bootstrap": None, "uptime": 0,
+            "version": app.version, "tier": "Unknown",
+            "cpu": {"percent": 0, "temp_c": None},
+            "ram": {"used_gb": 0, "total_gb": 0, "percent": 0},
+            "inference": {"tokensPerSecond": 0, "lifetimeTokens": 0,
+                          "loadedModel": None, "contextSize": None},
+        }
+
+
+async def _build_api_status() -> dict:
+    """Build the full status payload.
+
+    Resolves the loaded model name *once* and threads it through the
+    metrics and context-size helpers to avoid redundant HTTP round-trips
+    to llama-server (previously 5 sequential calls, now 3 parallel).
+    """
     gpu_info = get_gpu_info()
     service_statuses = await get_all_services()
     model_info = get_model_info()
     bootstrap_info = get_bootstrap_status()
-    llama_metrics_data, loaded_model, context_size = await asyncio.gather(
-        get_llama_metrics(), get_loaded_model(), get_llama_context_size(),
+
+    # Resolve the loaded model name once, then fan it out.
+    loaded_model = await get_loaded_model()
+    llama_metrics_data, context_size = await asyncio.gather(
+        get_llama_metrics(model_hint=loaded_model),
+        get_llama_context_size(model_hint=loaded_model),
     )
 
     gpu_data = None

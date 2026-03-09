@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 
 const POLL_INTERVAL = 5000 // 5 seconds
 
@@ -50,6 +50,10 @@ export function useSystemStatus() {
   })
   const [loading, setLoading] = useState(!USE_MOCK_DATA)
   const [error, setError] = useState(null)
+  // Guard against overlapping fetches — if the API is slow (e.g.
+  // llama-server under inference load) we skip the next poll rather
+  // than stacking concurrent requests that can amplify the problem.
+  const fetchInFlight = useRef(false)
 
   useEffect(() => {
     const fetchStatus = async () => {
@@ -59,6 +63,10 @@ export function useSystemStatus() {
         return
       }
 
+      // Skip this tick if the previous fetch hasn't returned yet.
+      if (fetchInFlight.current) return
+      fetchInFlight.current = true
+
       try {
         const response = await fetch('/api/status')
         if (!response.ok) throw new Error('Failed to fetch status')
@@ -67,8 +75,9 @@ export function useSystemStatus() {
         setError(null)
       } catch (err) {
         setError(err.message)
-        // No silent fallback - let error propagate to UI
+        // Keep previous status on error so the UI doesn't flash
       } finally {
+        fetchInFlight.current = false
         setLoading(false)
       }
     }
