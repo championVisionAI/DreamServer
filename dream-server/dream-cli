@@ -355,7 +355,7 @@ cmd_chat() {
 
     # Get model from llama-server if not specified
     if [[ -z "$model" ]]; then
-        model=$(curl -s "http://localhost:${_llm_port}/v1/models" | grep -oP '"id":\s*"\K[^"]+' | head -1)
+        model=$(curl -s "http://localhost:${_llm_port}/v1/models" | jq -r '.data[0].id // "local"')
     fi
 
     log "Sending to $model..."
