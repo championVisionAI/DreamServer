@@ -360,7 +360,7 @@ test_whisper() {
     response=$(curl -s --max-time "$TIMEOUT" "$health_url" 2>/dev/null || echo "")
     
     if [[ -n "$response" ]]; then
-        if echo "$response" | grep -qi "ok\|healthy\|ready"; then
+        if echo "$response" | grep -qiE "ok|healthy|ready"; then
             record_result "Whisper Health" "pass"
             print_test "Whisper Health" "pass"
         else
@@ -545,7 +545,7 @@ _print_json_summary() {
     local elapsed="$1"
     
     echo "{"
-    echo "  \"timestamp\": \"$(date -Iseconds)\","
+    echo "  \"timestamp\": \"$(date -u +"%Y-%m-%dT%H:%M:%SZ")\","
     echo "  \"runtime_seconds\": $elapsed,"
     echo "  \"summary\": {"
     echo "    \"total\": $TOTAL_TESTS,"

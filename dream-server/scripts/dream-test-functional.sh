@@ -145,7 +145,7 @@ test_tts_functional() {
     fi
     
     # Check it's a valid WAV file
-    if ! file "$output_file" | grep -qi "audio\|wav\|riff"; then
+    if ! file "$output_file" | grep -qiE "audio|wav|riff"; then
         warn "TTS output may not be valid WAV: $(file "$output_file")"
         pass "TTS generates audio file ($file_size bytes)"
     else
@@ -242,7 +242,7 @@ test_whisper_functional() {
         return 1
     fi
     
-    if echo "$transcription" | grep -qi "hello\|world"; then
+    if echo "$transcription" | grep -qiE "hello|world"; then
         pass "Whisper transcribes correctly: '$transcription'"
     else
         warn "Whisper transcribed: '$transcription'"

@@ -133,7 +133,8 @@ if ext_dir.exists():
             gpu_overlay = service_dir / f"compose.{gpu_backend}.yaml"
             if gpu_overlay.exists():
                 resolved.append(str(gpu_overlay.relative_to(script_dir)))
-        except Exception:
+        except Exception as e:
+            print(f"WARNING: skipping {service_dir.name}: {e}", file=sys.stderr)
             continue
 
 # Include docker-compose.override.yml if it exists (user customizations)

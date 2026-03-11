@@ -225,7 +225,7 @@ log ""
 # JSON output
 if $JSON_OUTPUT; then
     echo "{"
-    echo "  \"timestamp\": \"$(date -Iseconds)\","
+    echo "  \"timestamp\": \"$(date -u +"%Y-%m-%dT%H:%M:%SZ")\","
     echo "  \"status\": \"$([ $EXIT_CODE -eq 0 ] && echo "healthy" || ([ $EXIT_CODE -eq 1 ] && echo "degraded" || echo "critical"))\","
     echo "  \"services\": {"
     first=true
