@@ -64,19 +64,9 @@ log "RAM: ${RAM_GB}GB"
 DISK_AVAIL=$(df -BG "$HOME" | tail -1 | awk '{print $4}' | tr -d 'G')
 log "Available disk: ${DISK_AVAIL}GB"
 
-# GPU Detection with progress indicator
-printf "  ${GRN}⠋${NC} Scanning for GPU..."
-detect_gpu > /dev/null 2>&1 &
-_gpu_pid=$!
-_spin='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
-_i=0
-while kill -0 $_gpu_pid 2>/dev/null; do
-    printf "\r  ${GRN}%s${NC} Scanning for GPU..." "${_spin:$_i:1}"
-    _i=$(( (_i + 1) % ${#_spin} ))
-    sleep 0.2
-done
-wait $_gpu_pid || true
-printf "\r  ${BGRN}✓${NC} GPU scan complete    \n"
+# GPU Detection
+ai "Detecting GPU..."
+detect_gpu || true
 
 if [[ "${CAP_PROFILE_LOADED:-false}" == "true" ]]; then
     case "${CAP_LLM_BACKEND:-}" in
