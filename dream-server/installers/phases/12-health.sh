@@ -61,13 +61,13 @@ _check_health "ComfyUI" "http://localhost:${SERVICE_PORTS[comfyui]:-8188}${SERVI
 # We use the /api/config HTTP endpoint to set values after the service starts.
 if docker inspect dream-perplexica &>/dev/null; then
     PERPLEXICA_URL="http://localhost:${SERVICE_PORTS[perplexica]:-3004}"
-    PERPLEXICA_SETUP=$(curl -sf "${PERPLEXICA_URL}/api/config" 2>/dev/null | \
+    PERPLEXICA_SETUP=$(curl -sf --max-time 10 "${PERPLEXICA_URL}/api/config" 2>/dev/null | \
         python3 -c "import sys,json;d=json.load(sys.stdin);print('done' if d['values']['setupComplete'] else 'needed')" 2>/dev/null || echo "skip")
 
     if [[ "$PERPLEXICA_SETUP" == "needed" ]]; then
         ai "Configuring Perplexica for ${LLM_MODEL}..."
         # Query current config to get provider UUIDs, then set model + preferences via API
-        curl -sf "${PERPLEXICA_URL}/api/config" 2>/dev/null | \
+        curl -sf --max-time 10 "${PERPLEXICA_URL}/api/config" 2>/dev/null | \
         python3 -c "
 import sys, json, urllib.request
 
@@ -126,9 +126,9 @@ if [[ "$ENABLE_VOICE" == "true" ]]; then
     STT_MODEL_ENCODED="${STT_MODEL//\//%2F}"
     WHISPER_URL="http://localhost:${SERVICE_PORTS[whisper]:-9000}"
     # Only download if model isn't already loaded
-    if ! curl -sf "${WHISPER_URL}/v1/models/${STT_MODEL_ENCODED}" &>/dev/null; then
+    if ! curl -sf --max-time 10 "${WHISPER_URL}/v1/models/${STT_MODEL_ENCODED}" &>/dev/null; then
         ai "Downloading STT model (${STT_MODEL})..."
-        curl -sf -X POST "${WHISPER_URL}/v1/models/${STT_MODEL_ENCODED}" >> "$LOG_FILE" 2>&1 && \
+        curl -sf --max-time 120 -X POST "${WHISPER_URL}/v1/models/${STT_MODEL_ENCODED}" >> "$LOG_FILE" 2>&1 && \
             printf "\r  ${BGRN}✓${NC} %-60s\n" "STT model cached (${STT_MODEL})" || \
             printf "\r  ${AMB}⚠${NC} %-60s\n" "STT model will download on first use"
     else

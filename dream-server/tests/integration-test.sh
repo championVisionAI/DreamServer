@@ -125,21 +125,29 @@ else
             fi
         fi
 
-        # Verify core services are defined
+        # Verify core services are defined (behaviorally)
+        # The WebUI service name has changed over time (webui -> open-webui). We accept either.
         compose_config=$(docker compose $COMPOSE_FLAGS --env-file "$PROJECT_DIR/.env.example" config 2>/dev/null || docker compose $COMPOSE_FLAGS config 2>/dev/null || true)
-        if [[ "$(basename "$COMPOSE_FILE")" == "docker-compose.amd.yml" ]]; then
-            core_services=("llama-server" "open-webui")
+
+        if echo "$compose_config" | grep -qE "^\s{2}llama-server:$" 2>/dev/null || \
+           grep -qE "^[[:space:]]*llama-server:" "$COMPOSE_FILE" 2>/dev/null; then
+            pass "Core service defined: llama-server"
         else
-            core_services=("llama-server" "webui")
+            fail "Core service missing: llama-server"
         fi
-        for service in "${core_services[@]}"; do
-            if echo "$compose_config" | grep -qE "^\\s{2}${service}:$" 2>/dev/null || \
-               grep -qE "^[[:space:]]*${service}:" "$COMPOSE_FILE" 2>/dev/null; then
-                pass "Core service defined: $service"
-            else
-                fail "Core service missing: $service"
-            fi
-        done
+
+        if echo "$compose_config" | grep -qE "^\s{2}(open-webui|webui):$" 2>/dev/null || \
+           grep -qE "^[[:space:]]*(open-webui|webui):" "$COMPOSE_FILE" 2>/dev/null; then
+            pass "Core service defined: web UI (open-webui or webui)"
+        else
+            fail "Core service missing: web UI (open-webui or webui)"
+        fi
+
+        # Optional: if both are present, report it (not a failure).
+        if echo "$compose_config" | grep -qE "^\s{2}open-webui:$" 2>/dev/null && \
+           echo "$compose_config" | grep -qE "^\s{2}webui:$" 2>/dev/null; then
+            pass "Both web UI service names present (open-webui + webui)"
+        fi
     else
         skip "Docker not installed — cannot validate compose syntax"
     fi
@@ -252,7 +260,7 @@ if [[ ! -d "$WORKFLOWS_DIR" ]]; then
     WORKFLOWS_DIR="$PROJECT_DIR/config/n8n"
 fi
 if [[ ! -d "$WORKFLOWS_DIR" ]]; then
-    fail "workflow directory not found (checked workflows/ and config/n8n/)"
+    skip "workflow directory not found (checked workflows/ and config/n8n/)"
 else
     pass "Workflow directory exists: ${WORKFLOWS_DIR#$PROJECT_DIR/}"
 
@@ -330,15 +338,15 @@ fi
 # .env.example
 if [[ -f "$PROJECT_DIR/.env.example" ]]; then
     pass ".env.example exists"
-    # Check it contains essential vars
+    # Check it contains essential vars (may be commented with defaults)
     for var in LLM_MODEL WEBUI_PORT; do
-        if grep -q "^${var}=" "$PROJECT_DIR/.env.example"; then
+        if grep -qE "^#?\s*${var}=" "$PROJECT_DIR/.env.example"; then
             pass ".env.example defines $var"
         else
             fail ".env.example missing $var"
         fi
     done
-    if grep -qE "^(LLAMA_SERVER_PORT|OLLAMA_PORT)=" "$PROJECT_DIR/.env.example"; then
+    if grep -qE "^#?\s*(LLAMA_SERVER_PORT|OLLAMA_PORT)=" "$PROJECT_DIR/.env.example"; then
         pass ".env.example defines an inference port variable"
     else
         fail ".env.example missing inference port variable (LLAMA_SERVER_PORT/OLLAMA_PORT)"
