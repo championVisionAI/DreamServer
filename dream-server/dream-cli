@@ -215,6 +215,7 @@ cmd_status_json() {
         local port_env="${SERVICE_PORT_ENVS[$sid]}"
         local default_port="${SERVICE_PORTS[$sid]}"
         local name="${SERVICE_NAMES[$sid]:-$sid}"
+        local compose_file="${SERVICE_COMPOSE[$sid]:-}"
 
         # Skip services with no health endpoint or port configured
         [[ -z "$health" || "$default_port" == "0" ]] && continue
@@ -227,8 +228,11 @@ cmd_status_json() {
         local container_status="unknown"
         local status="unknown"
 
+        if [[ "$cat" != "core" && ( -z "$compose_file" || ! -f "$compose_file" ) ]]; then
+            container_status="disabled"
+            status="disabled"
         # Determine container status (running/stopped) when we have ps output
-        if [[ -n "$running_services" ]]; then
+        elif [[ -n "$running_services" ]]; then
             if grep -qE "(^|[[:space:]])${sid}([[:space:]]|$)" <<<"$running_services"; then
                 container_status="running"
             else
@@ -237,7 +241,9 @@ cmd_status_json() {
         fi
 
         # For non-core services that are clearly stopped, avoid HTTP probe
-        if [[ "$cat" != "core" && "$container_status" == "stopped" ]]; then
+        if [[ "$status" == "disabled" ]]; then
+            :
+        elif [[ "$cat" != "core" && "$container_status" == "stopped" ]]; then
             status="stopped"
         else
             local url="http://localhost:${port}${health}"
@@ -557,11 +563,14 @@ cmd_health() {
 
     local healthy=0 total=0
     for sid in "${SERVICE_IDS[@]}"; do
+        local cat="${SERVICE_CATEGORIES[$sid]}"
         local health="${SERVICE_HEALTH[$sid]}"
         local port_env="${SERVICE_PORT_ENVS[$sid]}"
         local default_port="${SERVICE_PORTS[$sid]}"
         local name="${SERVICE_NAMES[$sid]:-$sid}"
+        local compose_file="${SERVICE_COMPOSE[$sid]:-}"
         [[ -z "$health" || "$default_port" == "0" ]] && continue
+        [[ "$cat" != "core" && ( -z "$compose_file" || ! -f "$compose_file" ) ]] && continue
 
         local port="$default_port"
         [[ -n "$port_env" ]] && port="${!port_env:-$default_port}"
