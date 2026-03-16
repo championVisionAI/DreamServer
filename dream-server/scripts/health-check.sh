@@ -46,16 +46,21 @@ ANY_FAIL=false
 
 log() { $QUIET || echo -e "$1"; }
 
+# Portable millisecond timestamp (macOS BSD date lacks %N)
+_now_ms() {
+    python3 -c 'import time; print(int(time.time() * 1000))' 2>/dev/null || echo "$(date +%s)000"
+}
+
 # ── Test functions ──────────────────────────────────────────────────────────
 
 # llama-server: critical path — performs an actual inference test
 test_llm() {
-    local start=$(date +%s%3N)
+    local start=$(_now_ms)
     local response=$(curl -sf --max-time $TIMEOUT \
         -H "Content-Type: application/json" \
         -d '{"model":"default","prompt":"Hi","max_tokens":1}' \
         "http://${LLM_HOST}:${LLM_PORT}/v1/completions" 2>/dev/null)
-    local end=$(date +%s%3N)
+    local end=$(_now_ms)
 
     if echo "$response" | grep -q '"text"'; then
         RESULTS[llm]="ok"
