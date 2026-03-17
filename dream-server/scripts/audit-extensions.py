@@ -80,6 +80,11 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     )
     parser.add_argument("--json", action="store_true", help="Emit JSON output.")
     parser.add_argument(
+        "--summary-only",
+        action="store_true",
+        help="Print only the summary block (human or JSON).",
+    )
+    parser.add_argument(
         "--strict",
         action="store_true",
         help="Treat warnings as failures.",
@@ -437,10 +442,23 @@ def main(argv: list[str]) -> int:
     payload = build_payload(project_dir, selected, global_issues, args.strict, args.services)
 
     if args.json:
-        json.dump(payload, sys.stdout, indent=2)
+        if args.summary_only:
+            json.dump(payload["summary"], sys.stdout, indent=2)
+        else:
+            json.dump(payload, sys.stdout, indent=2)
         sys.stdout.write("\n")
     else:
-        print_human_report(payload)
+        if args.summary_only:
+            summary = payload["summary"]
+            print(
+                "Summary: "
+                f"{summary['services_audited']} services, "
+                f"{summary['errors']} errors, "
+                f"{summary['warnings']} warnings, "
+                f"result={summary['result']}"
+            )
+        else:
+            print_human_report(payload)
 
     if payload["summary"]["errors"] > 0:
         return 1
