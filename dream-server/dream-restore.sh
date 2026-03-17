@@ -36,6 +36,24 @@ fmt_bytes() {
     fi
 }
 
+# Rsync with progress indicator
+rsync_with_progress() {
+    local src="$1"
+    local dest="$2"
+    local label="${3:-Copying}"
+
+    log_info "$label..."
+
+    # Use --info=progress2 for compact single-line progress updates
+    # Fallback to basic rsync if progress2 not supported
+    if rsync --help 2>/dev/null | grep -q "info=progress2"; then
+        rsync -a --info=progress2 "$src" "$dest"
+    else
+        # Fallback: use --progress for older rsync versions
+        rsync -a --progress "$src" "$dest" 2>/dev/null || rsync -a "$src" "$dest"
+    fi
+}
+
 # Available bytes on filesystem containing a path
 free_bytes_for_path() {
     local path="$1"
@@ -359,7 +377,7 @@ restore_user_data() {
             mkdir -p "$DREAM_DIR/$(dirname "$dir")"
             # Note: Using -a without --delete to preserve any new files created after backup
             # Use --force flag or manually delete target if you need exact restoration
-            rsync -a "$backup_dir/$dir" "$DREAM_DIR/$(dirname "$dir")/"
+            rsync_with_progress "$backup_dir/$dir" "$DREAM_DIR/$(dirname "$dir")/" "Restoring $dir"
             log_success "Restored: $dir"
         else
             log_warn "Skipped (not in backup): $dir"

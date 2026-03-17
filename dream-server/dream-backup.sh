@@ -40,6 +40,24 @@ fmt_bytes() {
     fi
 }
 
+# Rsync with progress indicator
+rsync_with_progress() {
+    local src="$1"
+    local dest="$2"
+    local label="${3:-Copying}"
+
+    log_info "$label..."
+
+    # Use --info=progress2 for compact single-line progress updates
+    # Fallback to basic rsync if progress2 not supported
+    if rsync --help 2>/dev/null | grep -q "info=progress2"; then
+        rsync -a --delete --info=progress2 "$src" "$dest"
+    else
+        # Fallback: use --progress for older rsync versions
+        rsync -a --delete --progress "$src" "$dest" 2>/dev/null || rsync -a --delete "$src" "$dest"
+    fi
+}
+
 # Available bytes on filesystem containing a path
 free_bytes_for_path() {
     local path="$1"
@@ -314,7 +332,7 @@ backup_user_data() {
         if [[ -d "$full_path" ]]; then
             local dest_dir="$backup_dir/$(dirname "$path")"
             mkdir -p "$dest_dir"
-            rsync -a --delete "$full_path" "$dest_dir/"
+            rsync_with_progress "$full_path" "$dest_dir/" "Backing up $path"
             log_success "Backed up: $path"
         else
             log_warn "Skipped (not found): $path"
@@ -337,7 +355,7 @@ backup_config() {
 
     # Config directory
     if [[ -d "$DREAM_DIR/config" ]]; then
-        rsync -a --delete "$DREAM_DIR/config" "$backup_dir/"
+        rsync_with_progress "$DREAM_DIR/config" "$backup_dir/" "Backing up config/"
         log_success "Backed up: config/"
     fi
 }
@@ -383,7 +401,7 @@ backup_cache() {
     log_info "Backing up cache (models, etc.)..."
 
     if [[ -d "$DREAM_DIR/models" ]]; then
-        rsync -a --delete "$DREAM_DIR/models" "$backup_dir/"
+        rsync_with_progress "$DREAM_DIR/models" "$backup_dir/" "Backing up models/"
         log_success "Backed up: models/"
     fi
 
@@ -397,7 +415,7 @@ backup_cache() {
         if [[ -d "$DREAM_DIR/$path" ]]; then
             local dest_dir="$backup_dir/$(dirname "$path")"
             mkdir -p "$dest_dir"
-            rsync -a --delete "$DREAM_DIR/$path" "$dest_dir/"
+            rsync_with_progress "$DREAM_DIR/$path" "$dest_dir/" "Backing up $path"
             log_success "Backed up: $path"
         fi
     done
