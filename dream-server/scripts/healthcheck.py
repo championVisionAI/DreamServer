@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import socket
+import time
 import sys
 import urllib.error
 import urllib.request
@@ -33,6 +34,18 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         type=int,
         default=200,
         help="Expected HTTP status for URL checks (default: 200).",
+    )
+    parser.add_argument(
+        "--retries",
+        type=int,
+        default=1,
+        help="Number of attempts before failing (default: 1).",
+    )
+    parser.add_argument(
+        "--retry-delay",
+        type=float,
+        default=0.5,
+        help="Delay in seconds between retries (default: 0.5).",
     )
     return parser.parse_args(argv)
 
@@ -93,9 +106,21 @@ def main(argv: list[str]) -> int:
     if args.timeout <= 0:
         print("timeout must be greater than zero", file=sys.stderr)
         return 2
+    if args.retries <= 0:
+        print("retries must be greater than zero", file=sys.stderr)
+        return 2
+    if args.retry_delay < 0:
+        print("retry-delay must be non-negative", file=sys.stderr)
+        return 2
 
     if is_http_target(args.target):
-        ok = check_http(args.target, args.timeout, args.expect_status)
+        ok = False
+        for attempt in range(args.retries):
+            ok = check_http(args.target, args.timeout, args.expect_status)
+            if ok:
+                break
+            if attempt + 1 < args.retries:
+                time.sleep(args.retry_delay)
         return 0 if ok else 1
 
     try:
@@ -104,7 +129,13 @@ def main(argv: list[str]) -> int:
         print(str(exc), file=sys.stderr)
         return 2
 
-    ok = check_tcp(host, port, args.timeout)
+    ok = False
+    for attempt in range(args.retries):
+        ok = check_tcp(host, port, args.timeout)
+        if ok:
+            break
+        if attempt + 1 < args.retries:
+            time.sleep(args.retry_delay)
     return 0 if ok else 1
 
 
