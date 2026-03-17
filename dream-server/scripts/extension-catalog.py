@@ -31,6 +31,16 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default="json",
         help="Output format (default: json).",
     )
+    parser.add_argument(
+        "--category",
+        choices=("core", "recommended", "optional"),
+        help="Filter services by category.",
+    )
+    parser.add_argument(
+        "--status",
+        choices=("always-on", "enabled", "disabled", "missing"),
+        help="Filter services by runtime status.",
+    )
     return parser.parse_args(argv)
 
 
@@ -69,7 +79,7 @@ def service_enabled(service_dir: Path, compose_file: str) -> str:
     return "missing"
 
 
-def discover_catalog(project_dir: Path) -> dict[str, Any]:
+def discover_catalog(project_dir: Path, *, category: str | None = None, status: str | None = None) -> dict[str, Any]:
     services_dir = project_dir / "extensions" / "services"
     services: list[dict[str, Any]] = []
 
@@ -107,6 +117,11 @@ def discover_catalog(project_dir: Path) -> dict[str, Any]:
                 "path": str(service_dir.relative_to(project_dir)),
             }
         )
+
+    if category:
+        services = [service for service in services if service["category"] == category]
+    if status:
+        services = [service for service in services if service["status"] == status]
 
     counts = Counter(service["category"] for service in services)
     status_counts = Counter(service["status"] for service in services)
@@ -155,7 +170,7 @@ def render_markdown(catalog: dict[str, Any]) -> str:
 def main() -> int:
     args = parse_args()
     project_dir = args.project_dir.resolve()
-    catalog = discover_catalog(project_dir)
+    catalog = discover_catalog(project_dir, category=args.category, status=args.status)
 
     if args.format == "markdown":
         print(render_markdown(catalog), end="")
