@@ -523,6 +523,32 @@ cmd_list() {
     done
 }
 
+cmd_extensions() {
+    check_install
+    cd "$INSTALL_DIR"
+
+    local subcmd="${1:-audit}"
+    shift || true
+
+    local tool="$INSTALL_DIR/scripts/extension-governance.py"
+    [[ -f "$tool" ]] || error "Extension governance tool not found: $tool"
+
+    case "$subcmd" in
+        audit|matrix|ports)
+            python3 "$tool" "$subcmd" --root "$INSTALL_DIR" "$@"
+            ;;
+        *)
+            log "Usage: dream extensions <audit|matrix|ports> [tool options]"
+            log "Examples:"
+            log "  dream extensions audit"
+            log "  dream extensions audit --strict --gpu-backend amd"
+            log "  dream extensions matrix --format json"
+            log "  dream extensions ports"
+            exit 1
+            ;;
+    esac
+}
+
 #=============================================================================
 # Preset Commands
 #=============================================================================
@@ -894,6 +920,7 @@ ${CYAN}Commands:${NC}
   list                List all services and their status
   enable <service>    Enable an extension service
   disable <service>   Disable an extension service
+  extensions <cmd>    Extension governance tools (audit/matrix/ports)
   preset <action>     Save/load/list/delete/export/import presets
   mode [local|cloud|hybrid]
                       Switch between local/cloud/hybrid modes
@@ -929,6 +956,11 @@ ${CYAN}Mode Commands:${NC}
   mode cloud          Switch to cloud mode (LiteLLM + API keys)
   mode hybrid         Switch to hybrid mode (local + cloud fallback)
 
+${CYAN}Extension Commands:${NC}
+  extensions audit    Validate manifests/dependencies/compose contracts
+  extensions matrix   Show backend compatibility matrix
+  extensions ports    Show port map and detect collisions
+
 ${CYAN}Model Commands:${NC}
   model current       Show current model
   model list          List available tiers
@@ -959,6 +991,9 @@ ${CYAN}Examples:${NC}
   dream enable n8n                # Enable the n8n extension
   dream disable whisper           # Disable Whisper STT
   dream mode local                # Switch to local mode
+  dream extensions audit          # Run extension governance checks
+  dream extensions matrix         # Show backend support matrix
+  dream extensions ports          # Find port collisions early
   dream preset save my-setup      # Snapshot your config
   dream preset load my-setup      # Restore it later
   dream preset export my-setup my-setup.tar.gz
@@ -989,6 +1024,7 @@ case "${1:-help}" in
     list|ls)     cmd_list ;;
     enable)      shift; cmd_enable "$@" ;;
     disable)     shift; cmd_disable "$@" ;;
+    extensions|ext) shift; cmd_extensions "$@" ;;
     preset|p)    shift; cmd_preset "$@" ;;
     mode|m)      shift; cmd_mode "$@" ;;
     model)       shift; cmd_model "$@" ;;
