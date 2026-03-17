@@ -17,6 +17,11 @@ MANIFEST_NAMES = ("manifest.yaml", "manifest.yml", "manifest.json")
 VALID_CATEGORIES = {"core", "recommended", "optional"}
 VALID_TYPES = {"docker", "host-systemd"}
 VALID_GPU_BACKENDS = {"amd", "nvidia", "apple", "all", "none"}
+OVERLAY_SUFFIXES = {
+    "amd": ("compose.amd.yaml", "compose.amd.yml"),
+    "nvidia": ("compose.nvidia.yaml", "compose.nvidia.yml"),
+    "apple": ("compose.apple.yaml", "compose.apple.yml"),
+}
 FEATURE_SERVICE_KEYS = (
     ("requirements", "services"),
     ("requirements", "services_all"),
@@ -44,6 +49,9 @@ class ServiceRecord:
     manifest: dict[str, Any]
     service: dict[str, Any]
     features: list[dict[str, Any]]
+    compose_path: Path | None
+    compose_enabled: bool
+    overlay_paths: dict[str, Path]
     category: str
     service_type: str
     issues: list[Issue] = field(default_factory=list)
@@ -142,6 +150,71 @@ def collect_service_references(feature: dict[str, Any]) -> list[str]:
     return refs
 
 
+def resolve_compose_path(service_dir: Path, compose_file: str) -> tuple[Path | None, bool]:
+    if not compose_file:
+        return None, False
+
+    enabled = service_dir / compose_file
+    if enabled.exists():
+        return enabled, True
+
+    disabled = service_dir / f"{compose_file}.disabled"
+    if disabled.exists():
+        return disabled, False
+
+    return enabled, False
+
+
+def load_compose_service(path: Path, service_id: str) -> Any:
+    document = load_document(path)
+    if not isinstance(document, dict):
+        raise ValueError("compose root must be a mapping")
+    services = document.get("services", {})
+    if not isinstance(services, dict):
+        raise ValueError("compose services block must be a mapping")
+    if services == {}:
+        return {}
+    return services.get(service_id)
+
+
+def extract_target_ports(service_def: Any) -> list[int]:
+    if not isinstance(service_def, dict):
+        return []
+
+    results: list[int] = []
+    for port in as_list(service_def.get("ports")):
+        if isinstance(port, int) and port > 0:
+            results.append(port)
+            continue
+        if isinstance(port, str):
+            tail = port.rsplit(":", 1)[-1].split("/", 1)[0]
+            try:
+                results.append(int(tail))
+            except ValueError:
+                continue
+            continue
+        if isinstance(port, dict):
+            target = parse_positive_int(port.get("target"))
+            if target:
+                results.append(target)
+    return results
+
+
+def ports_reference_env(service_def: Any, env_name: str) -> bool:
+    if not isinstance(service_def, dict) or not env_name:
+        return False
+
+    needle = f"${{{env_name}"
+    for port in as_list(service_def.get("ports")):
+        if isinstance(port, str) and needle in port:
+            return True
+        if isinstance(port, dict):
+            published = port.get("published")
+            if isinstance(published, str) and env_name in published:
+                return True
+    return False
+
+
 def discover_services(project_dir: Path) -> tuple[list[ServiceRecord], list[Issue]]:
     ext_dir = project_dir / "extensions" / "services"
     records: list[ServiceRecord] = []
@@ -226,6 +299,17 @@ def discover_services(project_dir: Path) -> tuple[list[ServiceRecord], list[Issu
             )
             features = []
 
+        compose_path, compose_enabled = resolve_compose_path(
+            service_dir, str(service.get("compose_file") or "")
+        )
+        overlay_paths = {
+            backend: next(
+                (service_dir / name for name in names if (service_dir / name).exists()),
+                None,
+            )
+            for backend, names in OVERLAY_SUFFIXES.items()
+        }
+
         records.append(
             ServiceRecord(
                 service_id=str(service.get("id") or service_dir.name),
@@ -235,10 +319,19 @@ def discover_services(project_dir: Path) -> tuple[list[ServiceRecord], list[Issu
                 manifest=manifest,
                 service=service,
                 features=features,
+                compose_path=compose_path,
+                compose_enabled=compose_enabled,
+                overlay_paths=overlay_paths,
                 category=str(service.get("category") or "optional"),
                 service_type=str(service.get("type") or "docker"),
             )
         )
+
+        records[-1].overlay_paths = {
+            backend: path
+            for backend, path in records[-1].overlay_paths.items()
+            if path is not None
+        }
 
     return records, issues
 
@@ -336,6 +429,58 @@ def validate_records(records: list[ServiceRecord], global_issues: list[Issue], r
         env_vars = service.get("env_vars")
         if env_vars is not None and not isinstance(env_vars, list):
             record.add_issue("error", "env-vars-invalid", "service.env_vars must be a list when present")
+
+        if record.service_type == "docker":
+            compose_file = str(service.get("compose_file") or "")
+            if record.category != "core" and not compose_file:
+                record.add_issue("error", "compose-file-missing", "non-core docker services must declare service.compose_file")
+            elif compose_file and (record.compose_path is None or not record.compose_path.exists()):
+                record.add_issue("error", "compose-file-missing", f"compose file '{compose_file}' was not found")
+            elif record.compose_path and record.compose_path.exists():
+                try:
+                    base_service = load_compose_service(record.compose_path, record.service_id)
+                except Exception as exc:
+                    record.add_issue("error", "compose-invalid", f"failed to parse compose file: {exc}")
+                    base_service = None
+
+                if record.category != "core" and base_service is None:
+                    record.add_issue("error", "compose-service-missing", f"compose file does not define service '{record.service_id}'")
+
+                backends_for_stub = [backend for backend in backends if backend in {"amd", "nvidia", "apple"}]
+                if base_service == {}:
+                    for backend in backends_for_stub:
+                        if backend not in record.overlay_paths:
+                            record.add_issue("error", "overlay-required", f"stub compose requires compose.{backend}.yaml")
+
+                definitions = [definition for definition in [base_service] if isinstance(definition, dict)]
+                for overlay_path in record.overlay_paths.values():
+                    try:
+                        overlay_service = load_compose_service(overlay_path, record.service_id)
+                    except Exception as exc:
+                        record.add_issue("error", "overlay-invalid", f"failed to parse {overlay_path.name}: {exc}")
+                        continue
+                    if overlay_service is None:
+                        record.add_issue("error", "overlay-service-missing", f"{overlay_path.name} does not define service '{record.service_id}'")
+                        continue
+                    definitions.append(overlay_service)
+
+                container_name = str(service.get("container_name") or "")
+                if container_name and definitions:
+                    if not any(definition.get("container_name") == container_name for definition in definitions):
+                        record.add_issue("error", "container-name-mismatch", f"container_name '{container_name}' was not found in compose definitions")
+
+                port = parse_positive_int(service.get("port"))
+                if port is not None and definitions:
+                    if not any(port in extract_target_ports(definition) for definition in definitions):
+                        record.add_issue("error", "compose-port-mismatch", f"no compose port mapping targets manifest service.port {port}")
+
+                external_port_env = str(service.get("external_port_env") or "")
+                if external_port_env and definitions:
+                    if not any(ports_reference_env(definition, external_port_env) for definition in definitions):
+                        record.add_issue("warning", "compose-port-env-unused", f"compose ports do not reference '{external_port_env}'")
+
+                if definitions and not any("healthcheck" in definition for definition in definitions):
+                    record.add_issue("warning", "healthcheck-missing", "docker service has no healthcheck stanza in compose definitions")
 
         for dep in as_string_list(service.get("depends_on")):
             if dep not in known_services:
