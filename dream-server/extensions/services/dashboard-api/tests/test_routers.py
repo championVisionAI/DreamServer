@@ -7,7 +7,6 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
 
 
 # ---------------------------------------------------------------------------
@@ -170,6 +169,41 @@ def test_preflight_required_ports_no_auth(test_client):
     data = resp.json()
     assert "ports" in data
     assert isinstance(data["ports"], list)
+
+
+def test_preflight_docker_authenticated(test_client):
+    """GET /api/preflight/docker with auth → 200, returns docker availability."""
+    resp = test_client.get("/api/preflight/docker", headers=test_client.auth_headers)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "available" in data
+    if data["available"]:
+        assert "version" in data
+
+
+def test_preflight_gpu_authenticated(test_client):
+    """GET /api/preflight/gpu with auth → 200, returns GPU info or error."""
+    resp = test_client.get("/api/preflight/gpu", headers=test_client.auth_headers)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "available" in data
+    if data["available"]:
+        assert "name" in data
+        assert "vram" in data
+        assert "backend" in data
+    else:
+        assert "error" in data
+
+
+def test_preflight_disk_authenticated(test_client):
+    """GET /api/preflight/disk with auth → 200, returns disk space info."""
+    resp = test_client.get("/api/preflight/disk", headers=test_client.auth_headers)
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "free" in data
+    assert "total" in data
+    assert "used" in data
+    assert "path" in data
 
 
 # ---------------------------------------------------------------------------
