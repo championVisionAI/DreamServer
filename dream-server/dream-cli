@@ -523,6 +523,16 @@ cmd_list() {
     done
 }
 
+cmd_extension_ports() {
+    check_install
+    cd "$INSTALL_DIR"
+
+    local tool="$INSTALL_DIR/scripts/extension-port-audit.py"
+    [[ -f "$tool" ]] || error "extension-port-audit.py not found at $tool"
+
+    python3 "$tool" --root "$INSTALL_DIR" "$@"
+}
+
 #=============================================================================
 # Preset Commands
 #=============================================================================
@@ -892,6 +902,7 @@ Usage: dream <command> [options]
 ${CYAN}Commands:${NC}
   status              Show service health and GPU status
   list                List all services and their status
+  extension-ports     Audit extension host ports and collisions
   enable <service>    Enable an extension service
   disable <service>   Disable an extension service
   preset <action>     Save/load/list/delete/export/import presets
@@ -956,6 +967,7 @@ EOF
 ${CYAN}Examples:${NC}
   dream status                    # Check all services
   dream list                      # See all available services
+  dream extension-ports           # Audit extension port declarations
   dream enable n8n                # Enable the n8n extension
   dream disable whisper           # Disable Whisper STT
   dream mode local                # Switch to local mode
@@ -987,6 +999,7 @@ EOF
 case "${1:-help}" in
     status|s)    cmd_status ;;
     list|ls)     cmd_list ;;
+    extension-ports) shift; cmd_extension_ports "$@" ;;
     enable)      shift; cmd_enable "$@" ;;
     disable)     shift; cmd_disable "$@" ;;
     preset|p)    shift; cmd_preset "$@" ;;
